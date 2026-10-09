@@ -2,6 +2,7 @@
 HyperLogLog Applications in Electronic Design Automation (EDA)
 """
 
+import hashlib
 import random
 from dataclasses import dataclass
 from typing import Dict, Optional
@@ -38,7 +39,8 @@ class EDAHyperLogLog:
         key = f"{element_type}:{element_id}"
         if properties:
             key += ":" + str(sorted(properties.items()))
-        return hash(key) & ((1 << 64) - 1)
+        digest = hashlib.sha256(key.encode("utf-8")).digest()
+        return int.from_bytes(digest[:8], byteorder="big")
 
     def add_element(
         self, element_type: str, element_id: int, properties: Optional[Dict] = None
@@ -57,6 +59,20 @@ class EDAHyperLogLog:
 
         if leading_zeros > self.registers[reg_idx]:
             self.registers[reg_idx] = leading_zeros
+
+    def _estimate_cardinality(self) -> float:
+        """Estimate the number of distinct elements seen (harmonic mean + corrections)."""
+        z = np.sum(2.0 ** -self.registers)
+        estimate = self.alpha * self.m * self.m / z
+
+        if estimate <= 2.5 * self.m:
+            v = int(np.count_nonzero(self.registers == 0))
+            if v > 0:
+                estimate = self.m * np.log(self.m / v)
+        elif estimate > (1.0 / 30.0) * (2**64):
+            estimate = -(2**64) * np.log(1.0 - estimate / (2**64))
+
+        return float(estimate)
 
 
 class EDAApplicationSuite:
