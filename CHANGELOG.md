@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-09
+
+### Fixed
+- **Reproducible EDA suite**: Seeded the EDA demo RNG so the application-suite metrics are stable across runs. (#f0a0db3)
+- **Consistent memory labels**: The switching-analysis demo's memory/accuracy table now uses the same float32 labels as the standalone module (1.2 / 7.8 / 39 / 234 KB). (#5dc159b)
+
 ## [0.2.0] - 2026-10-09
 
 ### Fixed
