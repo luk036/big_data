@@ -5,7 +5,7 @@ HyperLogLog Applications in Electronic Design Automation (EDA)
 import hashlib
 import random
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,7 +33,7 @@ class EDAHyperLogLog:
         self.alpha = 0.7213 / (1 + 1.079 / self.m)
 
     def _hash_eda_element(
-        self, element_type: str, element_id: int, properties: Optional[Dict] = None
+        self, element_type: str, element_id: Any, properties: Optional[Dict] = None
     ) -> int:
         """Hash function for EDA elements."""
         key = f"{element_type}:{element_id}"
@@ -43,7 +43,7 @@ class EDAHyperLogLog:
         return int.from_bytes(digest[:8], byteorder="big")
 
     def add_element(
-        self, element_type: str, element_id: int, properties: Optional[Dict] = None
+        self, element_type: str, element_id: Any, properties: Optional[Dict] = None
     ):
         """Add an EDA element to the sketch."""
         h = self._hash_eda_element(element_type, element_id, properties)
@@ -127,17 +127,8 @@ class EDAApplicationSuite:
             # Create violation signature
             signature = f"{violation_type}_{layer}_{x // 10}_{y // 10}"
 
-            # Add to HLL
-            hll.add_element(
-                "DRC",
-                i,
-                {
-                    "type": violation_type,
-                    "layer": layer,
-                    "x_grid": x // 10,  # Bucket into grid cells
-                    "y_grid": y // 10,
-                },
-            )
+            # Add the violation *pattern* (not the instance) to the HLL
+            hll.add_element("DRC", signature)
 
             # Track actual for comparison
             actual_violations.add(signature)
@@ -208,9 +199,9 @@ class EDAApplicationSuite:
             # Add to HLL
             hll_paths.add_element("NET_PATH", net_id, {"gates": connected_gates})
 
-            # Track fanout pattern
+            # Track fanout pattern (distinct fanout degrees, not per-net)
             fanout_pattern = len(connected_gates)
-            hll_fanout.add_element("FANOUT", net_id, {"count": fanout_pattern})
+            hll_fanout.add_element("FANOUT", fanout_pattern)
 
             # Track actual for comparison
             actual_paths.add(path_signature)
@@ -316,10 +307,8 @@ class EDAApplicationSuite:
             region_y = min(y * 10 // grid_size, 9)
             region_idx = region_y * 10 + region_x
 
-            # Add cell to region's HLL
-            region_hlls[region_idx].add_element(
-                "CELL", cell_id, {"type": cell_type, "width": width, "height": height}
-            )
+            # Add the cell *type* (not the cell instance) to the region's HLL
+            region_hlls[region_idx].add_element("CELL", cell_type)
 
             # Track actual for comparison
             actual_cell_types[region_idx].add(cell_type)
@@ -534,16 +523,10 @@ class EDAApplicationSuite:
             pattern_signature = pattern[:20]  # First 20 bits
             transition_signature = transitions
 
-            # Add to HLL
-            hll_patterns.add_element(
-                "ACTIVITY_PATTERN",
-                signal_id,
-                {"pattern": pattern, "length": pattern_length},
-            )
+            # Add the pattern and transition *count* (not the signal instance) to HLL
+            hll_patterns.add_element("ACTIVITY_PATTERN", pattern_signature)
 
-            hll_transitions.add_element(
-                "TRANSITION_COUNT", signal_id, {"count": transitions}
-            )
+            hll_transitions.add_element("TRANSITION_COUNT", transition_signature)
 
             # Track actual
             actual_patterns.add(pattern_signature)
@@ -631,20 +614,9 @@ class EDAApplicationSuite:
             state_signature = current_state
             transition_signature = (current_state, next_state, stimulus)
 
-            # Add to HLL
-            hll_states.add_element(
-                "STATE", txn_id, {"state": current_state, "cycle": txn_id}
-            )
-
-            hll_transitions.add_element(
-                "TRANSITION",
-                txn_id,
-                {
-                    "from_state": current_state,
-                    "to_state": next_state,
-                    "stimulus": stimulus,
-                },
-            )
+            # Add the state and transition *signature* (not the transaction id) to HLL
+            hll_states.add_element("STATE", state_signature)
+            hll_transitions.add_element("TRANSITION", transition_signature)
 
             # Track actual
             covered_states.add(state_signature)
@@ -739,16 +711,12 @@ class EDAApplicationSuite:
                 # Create pattern signature
                 pattern_signature = tuple(defects)
 
-                # Add to HLL
-                hll_defect_patterns.add_element(
-                    "DEFECT_PATTERN", die_id, {"defects": defects, "die_id": die_id}
-                )
+                # Add the defect *pattern* and die bucket (not the die instance)
+                hll_defect_patterns.add_element("DEFECT_PATTERN", pattern_signature)
 
                 # Track failing die
                 failing_signature = die_id % 1000  # Bucket dies
-                hll_failing_dies.add_element(
-                    "FAILING_DIE", die_id, {"defect_count": num_defects}
-                )
+                hll_failing_dies.add_element("FAILING_DIE", failing_signature)
 
                 # Track actual
                 defect_patterns.add(pattern_signature)
