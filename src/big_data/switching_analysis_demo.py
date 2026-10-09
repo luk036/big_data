@@ -22,13 +22,12 @@ class CountMinSketch:
         self.depth = depth
         self.sketch = np.zeros((depth, width), dtype=np.float32)
 
-        # Initialize hash function parameters
-        self.hash_params = []
-        for i in range(depth):
-            # Use different random seeds for each hash function
-            a = random.randint(1, 2**31)
-            b = random.randint(1, 2**31)
-            self.hash_params.append((a, b))
+        # Deterministic hash functions derived from (width, depth): reproducible
+        # across runs, and shared by equal-sized sketches so merge() stays correct.
+        rng = random.Random((width << 20) ^ depth)
+        self.hash_params = [
+            (rng.randint(1, 2**31), rng.randint(1, 2**31)) for _ in range(depth)
+        ]
 
     def _hash(self, key: int, row: int) -> int:
         """Hash function for a given key and row"""
