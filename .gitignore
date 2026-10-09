@@ -48,6 +48,12 @@ cover/
 # ruff
 .ruff_cache/
 
+# Demo-generated figures (written to CWD by python -m big_data.*)
+/memory_accuracy_tradeoff.png
+/pattern_corner_analysis.png
+/switching_power_analysis.png
+/temporal_current_analysis.png
+
 # Environments
 .env
 .venv
