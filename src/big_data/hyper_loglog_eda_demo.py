@@ -745,6 +745,9 @@ class EDAApplicationSuite:
 
 def run_all_eda_applications():
     """Run all EDA application demonstrations."""
+    random.seed(42)
+    np.random.seed(42)
+
     print("=" * 80)
     print("HYPERLOGLOG APPLICATIONS IN ELECTRONIC DESIGN AUTOMATION (EDA)")
     print("=" * 80)
