@@ -180,10 +180,11 @@ def test_hyperloglog() -> None:
         # Get estimate
         estimated_count = hll.count()
 
-        # Calculate error
-        error = abs(estimated_count - actual_count) / actual_count * 100
+        # Ground truth is the number of *distinct* items, not the stream length
+        actual_distinct = len(set(data))
+        error = abs(estimated_count - actual_distinct) / actual_distinct * 100
 
-        print(f"Actual distinct count: {actual_count}")
+        print(f"Actual distinct count: {actual_distinct}")
         print(f"Estimated count: {estimated_count:.2f}")
         print(f"Error: {error:.2f}%")
         print(
