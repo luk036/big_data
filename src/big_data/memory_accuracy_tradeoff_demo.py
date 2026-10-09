@@ -20,13 +20,12 @@ class CountMinSketch:
         self.depth = depth
         self.sketch = np.zeros((depth, width), dtype=np.float32)
 
-        # Initialize hash function parameters
-        self.hash_params = []
-        for i in range(depth):
-            # Use different random seeds for each hash function
-            a = random.randint(1, 2**31)
-            b = random.randint(1, 2**31)
-            self.hash_params.append((a, b))
+        # Deterministic hash functions derived from (width, depth): reproducible
+        # across runs, and shared by equal-sized sketches so merge() stays correct.
+        rng = random.Random((width << 20) ^ depth)
+        self.hash_params = [
+            (rng.randint(1, 2**31), rng.randint(1, 2**31)) for _ in range(depth)
+        ]
 
     def _hash(self, key: int, row: int) -> int:
         """Hash function for a given key and row"""
@@ -113,10 +112,10 @@ def demo_memory_accuracy_tradeoff():
 
     # Test different CMS configurations
     configurations = [
-        {"width": 100, "depth": 3, "label": "Tiny (0.3KB)"},
-        {"width": 500, "depth": 4, "label": "Small (2KB)"},
-        {"width": 2000, "depth": 5, "label": "Medium (40KB)"},
-        {"width": 10000, "depth": 6, "label": "Large (240KB)"},
+        {"width": 100, "depth": 3, "label": "Tiny (1.2KB)"},
+        {"width": 500, "depth": 4, "label": "Small (7.8KB)"},
+        {"width": 2000, "depth": 5, "label": "Medium (39KB)"},
+        {"width": 10000, "depth": 6, "label": "Large (234KB)"},
     ]
 
     results = []
