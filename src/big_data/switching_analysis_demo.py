@@ -1388,10 +1388,10 @@ def demo_memory_accuracy_tradeoff():
 
     # Test different CMS configurations
     configurations = [
-        {"width": 100, "depth": 3, "label": "Tiny (0.3KB)"},
-        {"width": 500, "depth": 4, "label": "Small (2KB)"},
-        {"width": 2000, "depth": 5, "label": "Medium (40KB)"},
-        {"width": 10000, "depth": 6, "label": "Large (240KB)"},
+        {"width": 100, "depth": 3, "label": "Tiny (1.2KB)"},
+        {"width": 500, "depth": 4, "label": "Small (7.8KB)"},
+        {"width": 2000, "depth": 5, "label": "Medium (39KB)"},
+        {"width": 10000, "depth": 6, "label": "Large (234KB)"},
     ]
 
     results = []
