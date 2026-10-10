@@ -1,0 +1,15 @@
+---
+# Pandoc metadata for bigdata4eda-slides.md -> Beamer.
+# Build with LuaLaTeX (the slides contain literal emoji):
+#   pandoc -F pandoc-crossref --citeproc -t beamer --pdf-engine=lualatex \
+#          --include-in-header=bigdata4eda-preamble.tex \
+#          bigdata4eda-beamer.yaml bigdata4eda-slides.md -o bigdata4eda-slides.pdf
+fontsize: 10pt
+classoption:
+  - serif
+  - aspectratio=169
+institute: Fudan University
+date: \today
+link-citations: true
+colorlinks: true
+...

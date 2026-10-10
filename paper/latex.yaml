@@ -1,0 +1,10 @@
+---
+# LaTeX/PDF rendering options. Loaded via `--metadata-file=latex.yaml`.
+# IEEEtran journal is the canonical two-column style; colorlinks keeps the
+# citations and cross-references clickable.
+documentclass: IEEEtran
+classoption: journal
+link-citations: true
+colorlinks: true
+header-includes:
+  - '\usepackage{graphicx}'

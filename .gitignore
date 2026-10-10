@@ -54,6 +54,14 @@ cover/
 /switching_power_analysis.png
 /temporal_current_analysis.png
 
+# Paper build artifacts (sources are committed, products are regenerated)
+paper/bigdata4eda.tex
+paper/bigdata4eda-slides.tex
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
+
 # Environments
 .env
 .venv
