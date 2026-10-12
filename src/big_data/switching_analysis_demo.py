@@ -6,73 +6,7 @@ from typing import Any, Dict, List, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 
-
-class CountMinSketch:
-    """Basic Count-Min Sketch implementation for switching activity tracking"""
-
-    def __init__(self, width: int = 1000, depth: int = 5):
-        """
-        Initialize Count-Min Sketch
-
-        Args:
-            width: Number of counters in each hash array
-            depth: Number of hash functions (rows)
-        """
-        self.width = width
-        self.depth = depth
-        self.sketch = np.zeros((depth, width), dtype=np.float32)
-
-        # Deterministic hash functions derived from (width, depth): reproducible
-        # across runs, and shared by equal-sized sketches so merge() stays correct.
-        rng = random.Random((width << 20) ^ depth)
-        self.hash_params = [
-            (rng.randint(1, 2**31), rng.randint(1, 2**31)) for _ in range(depth)
-        ]
-
-    def _hash(self, key: int, row: int) -> int:
-        """Hash function for a given key and row"""
-        a, b = self.hash_params[row]
-        # Universal hash: (a*x + b) mod p mod width
-        return ((a * key + b) % 2147483647) % self.width
-
-    def update(self, key: int, value: float = 1.0):
-        """
-        Update sketch with a value for a key
-
-        Args:
-            key: Node ID or hash of node name
-            value: Switching activity value to add
-        """
-        for d in range(self.depth):
-            col = self._hash(key, d)
-            self.sketch[d][col] += value
-
-    def query(self, key: int) -> float:
-        """
-        Query estimated value for a key
-
-        Returns:
-            Minimum estimate (CMS property: always overestimates)
-        """
-        estimates = []
-        for d in range(self.depth):
-            col = self._hash(key, d)
-            estimates.append(self.sketch[d][col])
-
-        return min(estimates)
-
-    def merge(self, other: "CountMinSketch") -> "CountMinSketch":
-        """Merge another sketch into this one (element-wise addition)"""
-        if self.width != other.width or self.depth != other.depth:
-            raise ValueError("Sketches must have same dimensions for merging")
-
-        merged = CountMinSketch(self.width, self.depth)
-        merged.sketch = self.sketch + other.sketch  # type: ignore[assignment]
-        return merged
-
-    def reset(self):
-        """Reset all counters to zero"""
-        self.sketch.fill(0)
+from big_data.sketches.count_min import CountMinSketch
 
 
 # Demo 1: Basic CMS functionality

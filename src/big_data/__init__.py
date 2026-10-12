@@ -17,9 +17,11 @@ implementations so that each file reads as a self-contained experiment.
 
 from importlib.metadata import PackageNotFoundError, version
 
+from big_data.sketches import CountMinSketch
+
 try:
     __version__ = version("big_data")
 except PackageNotFoundError:  # pragma: no cover - running from a source tree
     __version__ = "0.0.0"
 
-__all__ = ["__version__"]
+__all__ = ["CountMinSketch", "__version__"]
