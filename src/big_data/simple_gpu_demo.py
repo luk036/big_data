@@ -1,46 +1,36 @@
 import numpy as np
 from numba import cuda, uint64
 
+from big_data.hll_hash import fmix64_device
 
-# 1. GPU Kernel: This runs in parallel on thousands of GPU cores
+
 @cuda.jit
 def hll_kernel(data, registers, b):
-    # Calculate the unique thread ID
     pos = cuda.grid(1)
 
     if pos < data.size:
-        # A simple, fast Xorshift-like hash for demonstration
-        # In production, use a more robust GPU-compatible MurmurHash
-        x = uint64(data[pos])
-        x ^= x << 13
-        x ^= x >> 7
-        x ^= x << 17
+        x = fmix64_device(uint64(data[pos]))
 
-        # Use first b bits for bucket index
-        m = 1 << b
-        idx = x % m
+        m_bits = uint64(b)
+        idx = x >> (uint64(64) - m_bits)
 
-        # Use remaining bits to find leading zeros
-        # We simulate this by looking at the bit pattern
-        w = x >> b
-        if w == 0:
-            count = 64 - b
-        else:
-            # Count leading zeros (manual implementation for GPU)
-            count = 1
-            while (w & 1) == 0 and count < (64 - b):
+        # Count leading zeros on the remaining 64-b bits
+        count = uint64(1)
+        temp_w = x << m_bits
+        for i in range(64 - b):
+            if (temp_w & uint64(0x8000000000000000)) == 0:
                 count += 1
-                w >>= 1
+                temp_w <<= 1
+            else:
+                break
 
-        # ATOMIC MAX: Critical for GPU.
-        # Ensures multiple threads don't overwrite each other.
         cuda.atomic.max(registers, idx, count)
 
 
 def run_gpu_hll(data_array, b=12):
     m = 2**b
     # Initialize registers on the GPU
-    d_registers = cuda.to_device(np.zeros(m, dtype=np.int32))
+    d_registers = cuda.to_device(np.zeros(m, dtype=np.uint32))
     d_data = cuda.to_device(data_array)
 
     # Configure GPU threads (blocks and grids)
@@ -55,7 +45,7 @@ def run_gpu_hll(data_array, b=12):
 
     # Harmonic mean calculation (standard HLL)
     alpha_m = 0.7213 / (1 + 1.079 / m)
-    estimate = alpha_m * (m**2) / sum(2.0**-r for r in h_registers)
+    estimate = alpha_m * (m**2) / sum(2.0 ** -float(r) for r in h_registers)
     return estimate
 
 

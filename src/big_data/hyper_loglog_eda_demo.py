@@ -2,13 +2,14 @@
 HyperLogLog Applications in Electronic Design Automation (EDA)
 """
 
-import hashlib
 import random
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+from big_data.hll_hash import hash_value
 
 
 @dataclass
@@ -39,8 +40,7 @@ class EDAHyperLogLog:
         key = f"{element_type}:{element_id}"
         if properties:
             key += ":" + str(sorted(properties.items()))
-        digest = hashlib.sha256(key.encode("utf-8")).digest()
-        return int.from_bytes(digest[:8], byteorder="big")
+        return hash_value(key)
 
     def add_element(
         self, element_type: str, element_id: Any, properties: Optional[Dict] = None
@@ -62,7 +62,7 @@ class EDAHyperLogLog:
 
     def _estimate_cardinality(self) -> float:
         """Estimate the number of distinct elements seen (harmonic mean + corrections)."""
-        z = np.sum(2.0 ** -self.registers)
+        z = np.sum(2.0**-self.registers)
         estimate = self.alpha * self.m * self.m / z
 
         if estimate <= 2.5 * self.m:

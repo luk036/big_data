@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numba import cuda
 
+from big_data.hll_hash import fmix64_device, hash_array_u64, hash_strings, hash_value
+
 
 @dataclass
 class HLLConfig:
@@ -20,88 +22,6 @@ class HLLConfig:
     p: int = 12  # Precision bits (2^p registers)
     hash_bits: int = 64  # Output hash bits
     batch_size: int = 1000000  # Default batch size for GPU
-
-
-class MurmurHash3:
-    """MurmurHash3 implementation for GPU-friendly hashing."""
-
-    @staticmethod
-    def hash64(key, seed=0):
-        """64-bit MurmurHash3."""
-        key = str(key).encode("utf-8")
-        length = len(key)
-        nblocks = length // 8
-
-        h1 = seed
-        h2 = seed
-
-        c1 = np.uint64(0x87C37B91114253D5)
-        c2 = np.uint64(0x4CF5AD432745937F)
-
-        # Body
-        for i in range(nblocks):
-            k1 = np.uint64(int.from_bytes(key[i * 8 : (i + 1) * 8], "little"))
-            np.uint64(0)
-
-            k1 *= c1
-            k1 = (k1 << 31) | (k1 >> 33)  # ROTL64(k1, 31)
-            k1 *= c2
-            h1 ^= k1
-
-            h1 = (h1 << 27) | (h1 >> 37)  # ROTL64(h1, 27)
-            h1 += h2
-            h1 = h1 * np.uint64(5) + np.uint64(0x52DCE729)
-
-        # Tail
-        tail = key[nblocks * 8 :]
-        k1 = np.uint64(0)
-        np.uint64(0)
-
-        if len(tail) >= 7:
-            k1 ^= np.uint64(tail[6]) << 48
-        if len(tail) >= 6:
-            k1 ^= np.uint64(tail[5]) << 40
-        if len(tail) >= 5:
-            k1 ^= np.uint64(tail[4]) << 32
-        if len(tail) >= 4:
-            k1 ^= np.uint64(tail[3]) << 24
-        if len(tail) >= 3:
-            k1 ^= np.uint64(tail[2]) << 16
-        if len(tail) >= 2:
-            k1 ^= np.uint64(tail[1]) << 8
-        if len(tail) >= 1:
-            k1 ^= np.uint64(tail[0])
-
-        if len(tail) > 0:
-            k1 *= c1
-            k1 = (k1 << 31) | (k1 >> 33)  # ROTL64(k1, 31)
-            k1 *= c2
-            h1 ^= k1
-
-        # Finalization
-        h1 ^= length
-        h2 ^= length
-
-        h1 += h2
-        h2 += h1
-
-        # Final mixing
-        h1 ^= h1 >> 33
-        h1 *= np.uint64(0xFF51AFD7ED558CCD)
-        h1 ^= h1 >> 33
-        h1 *= np.uint64(0xC4CEB9FE1A85EC53)
-        h1 ^= h1 >> 33
-
-        h2 ^= h2 >> 33
-        h2 *= np.uint64(0xFF51AFD7ED558CCD)
-        h2 ^= h2 >> 33
-        h2 *= np.uint64(0xC4CEB9FE1A85EC53)
-        h2 ^= h2 >> 33
-
-        h1 += h2
-        h2 += h1
-
-        return h1
 
 
 @cuda.jit(device=True)
@@ -119,7 +39,7 @@ def device_count_leading_zeros(x, total_bits):
         count += 1
         mask >>= 1
 
-    return total_bits - count + 1
+    return count + 1
 
 
 @cuda.jit
@@ -148,6 +68,22 @@ def hyperloglog_kernel(hashes, registers, p, hash_bits):
         cuda.atomic.max(registers, reg_idx, leading_zeros)
 
 
+@cuda.jit
+def hyperloglog_key_kernel(keys, registers, p):
+    """Hash uint64 keys on the device, then fold them into the registers."""
+    idx = cuda.grid(1)
+    if idx < keys.size:
+        h = fmix64_device(keys[idx])
+
+        reg_idx = (h >> (64 - p)) & ((1 << p) - 1)
+        remaining_bits = 64 - p
+        remaining = h & ((1 << remaining_bits) - 1)
+
+        rank = device_count_leading_zeros(remaining, remaining_bits)
+
+        cuda.atomic.max(registers, reg_idx, rank)
+
+
 class GPUHyperLogLog:
     """GPU-accelerated HyperLogLog using Numba CUDA."""
 
@@ -165,8 +101,6 @@ class GPUHyperLogLog:
         else:
             self.alpha = 0.7213 / (1 + 1.079 / self.m)
 
-        # Initialize registers on GPU
-        self.registers_gpu = cuda.device_array(self.m, dtype=np.int32)
         self._reset_registers()
 
         print("GPU HyperLogLog Initialized:")
@@ -176,21 +110,25 @@ class GPUHyperLogLog:
 
     def _reset_registers(self):
         """Reset all registers to zero on GPU."""
-        self.registers_gpu = cuda.device_array(self.m, dtype=np.int32)
+        self.registers_gpu = cuda.to_device(np.zeros(self.m, dtype=np.int32))
 
     def _hash_batch_cpu(self, data: List[Any]) -> np.ndarray:
         """Hash a batch of data on CPU (before sending to GPU)."""
         print(f"Hashing {len(data):,} items on CPU...")
 
-        # Pre-allocate array
-        hashes = np.empty(len(data), dtype=np.uint64)
+        return hash_strings(data)
 
-        # Hash each item
-        for i, item in enumerate(data):
-            # Using MurmurHash3 for speed
-            hashes[i] = MurmurHash3.hash64(item)
-
-        return hashes
+    def add_keys(self, keys: np.ndarray) -> None:
+        """Add a batch of uint64 keys, hashing on the device."""
+        if keys.size == 0:
+            return
+        d_keys = cuda.to_device(np.ascontiguousarray(keys, dtype=np.uint64))
+        threads = 256
+        blocks = (keys.size + threads - 1) // threads
+        hyperloglog_key_kernel[blocks, threads](
+            d_keys, self.registers_gpu, self.config.p
+        )
+        cuda.synchronize()
 
     def add_batch(self, data: List[Any]) -> None:
         """
@@ -329,31 +267,32 @@ class CPUHyperLogLog:
         else:
             self.alpha = 0.7213 / (1 + 1.079 / self.m)
 
-    def add(self, item: Any) -> None:
-        """Add a single item."""
-        h = MurmurHash3.hash64(item)
-
-        # Get register index
+    def _update(self, h: int) -> None:
         reg_idx = (h >> (64 - self.p)) & ((1 << self.p) - 1)
-
-        # Count leading zeros
         remaining_bits = 64 - self.p
         remaining = h & ((1 << remaining_bits) - 1)
 
         if remaining == 0:
             leading_zeros = remaining_bits + 1
         else:
-            # Count leading zeros manually
             count = 0
             mask = 1 << (remaining_bits - 1)
             while mask > 0 and (remaining & mask) == 0:
                 count += 1
                 mask >>= 1
-            leading_zeros = remaining_bits - count + 1
+            leading_zeros = count + 1
 
-        # Update register if larger
         if leading_zeros > self.registers[reg_idx]:
             self.registers[reg_idx] = leading_zeros
+
+    def add(self, item: Any) -> None:
+        """Add a single item."""
+        self._update(hash_value(item))
+
+    def add_hashes(self, hashes: np.ndarray) -> None:
+        """Add pre-computed 64-bit hashes (skips hashing)."""
+        for value in hashes:
+            self._update(int(value))
 
     def add_batch(self, data: List[Any]) -> None:
         """Add a batch of items."""
@@ -373,37 +312,64 @@ class CPUHyperLogLog:
         return float(E)
 
 
-def benchmark_comparison():
-    """Benchmark GPU vs CPU implementations."""
+def _median(values: List[float]) -> float:
+    return float(np.median(values)) if values else 0.0
+
+
+def _time_cpu_hashes(hashes: np.ndarray, p: int, repeats: int):
+    """Median CPU register-update time over pre-computed hashes."""
+    times = []
+    estimate = 0.0
+    for _ in range(repeats):
+        hll = CPUHyperLogLog(p=p)
+        start = time.perf_counter()
+        hll.add_hashes(hashes)
+        times.append(time.perf_counter() - start)
+        estimate = hll.count()
+    return _median(times), estimate
+
+
+def benchmark_comparison(repeats: int = 3):
+    """Benchmark GPU vs CPU HyperLogLog end-to-end on uint64 keys.
+
+    The GPU path hashes *on the device* (:func:`hyperloglog_key_kernel`), so the
+    reported time is a true end-to-end measure rather than one that hides CPU
+    string hashing; the CPU path uses vectorised hashing plus a Python register
+    loop. The GPU time is split into transfer, kernel, and readout.
+    """
     print("=" * 60)
     print("GPU vs CPU PERFORMANCE COMPARISON")
     print("=" * 60)
 
-    # Check if CUDA is available
     if not cuda.is_available():
         print("CUDA not available! Running CPU-only benchmark.")
-        return
+        return []
 
-    # Generate test data
     total_items = 5_000_000
     unique_items = 500_000
 
-    print(f"Generating {total_items:,} items ({unique_items:,} unique)...")
+    print(f"Generating {total_items:,} keys ({unique_items:,} unique)...")
 
-    data = []
-    for i in range(total_items):
-        if i < unique_items:
-            data.append(f"item_{i}")
-        else:
-            # Add duplicates from first half
-            data.append(f"item_{i % (unique_items // 2)}")
+    rng = np.random.default_rng(42)
+    keys = rng.integers(0, unique_items, size=total_items, dtype=np.uint64)
+    keys[:unique_items] = np.arange(unique_items, dtype=np.uint64)
+    rng.shuffle(keys)
 
-    # Shuffle the data
-    np.random.shuffle(data)
+    p = 12
+    threads = 256
 
-    # Test different batch sizes
+    hash_start = time.perf_counter()
+    hashes = hash_array_u64(keys)
+    hash_time = time.perf_counter() - hash_start
+    print(
+        f"CPU hashing (vectorised): {hash_time:.3f}s "
+        f"({total_items / hash_time / 1e6:.1f} M keys/sec)"
+    )
+
+    cpu_register_time, cpu_estimate = _time_cpu_hashes(hashes, p=p, repeats=repeats)
+    cpu_total = hash_time + cpu_register_time
+
     batch_sizes = [1000, 10000, 100000, 500000, 1000000]
-
     results = []
 
     for batch_size in batch_sizes:
@@ -411,62 +377,74 @@ def benchmark_comparison():
         print(f"Batch size: {batch_size:,}")
         print(f"{'=' * 40}")
 
-        # --- GPU Implementation ---
-        print("Running GPU implementation...")
-        gpu_hll = GPUHyperLogLog(HLLConfig(p=12))
+        gpu_hll = GPUHyperLogLog(HLLConfig(p=p))
 
-        # Warm up GPU
-        if batch_size == batch_sizes[0]:
-            print("Warming up GPU...")
-            warmup_data = data[:1000]
-            gpu_hll.add_batch(warmup_data)
+        warmup = keys[:4096]
+        gpu_hll._reset_registers()
+        gpu_hll.add_keys(warmup)
+
+        h2d_samples = []
+        kernel_samples = []
+        for _ in range(repeats):
             gpu_hll._reset_registers()
+            cuda.synchronize()
+            h2d = kernel = 0.0
+            for i in range(0, keys.size, batch_size):
+                batch = keys[i : i + batch_size]
+                t0 = time.perf_counter()
+                d_batch = cuda.to_device(batch)
+                t1 = time.perf_counter()
+                blocks = (batch.size + threads - 1) // threads
+                hyperloglog_key_kernel[blocks, threads](
+                    d_batch, gpu_hll.registers_gpu, p
+                )
+                cuda.synchronize()
+                t2 = time.perf_counter()
+                h2d += t1 - t0
+                kernel += t2 - t1
+            h2d_samples.append(h2d)
+            kernel_samples.append(kernel)
 
-        # Time GPU processing
-        gpu_start = time.time()
+        gpu_h2d = _median(h2d_samples)
+        gpu_kernel = _median(kernel_samples)
 
-        for i in range(0, len(data), batch_size):
-            batch = data[i : i + batch_size]
-            gpu_hll.add_batch(batch)
-
-        cuda.synchronize()
-        gpu_time = time.time() - gpu_start
+        d2h_start = time.perf_counter()
         gpu_estimate = gpu_hll.count()
+        gpu_d2h = time.perf_counter() - d2h_start
 
-        # --- CPU Implementation ---
-        print("Running CPU implementation...")
-        cpu_hll = CPUHyperLogLog(p=12)
-
-        cpu_start = time.time()
-        cpu_hll.add_batch(data)
-        cpu_time = time.time() - cpu_start
-        cpu_estimate = cpu_hll.count()
-
-        # --- Calculate metrics ---
-        speedup = cpu_time / gpu_time if gpu_time > 0 else 0
+        gpu_total = gpu_h2d + gpu_kernel + gpu_d2h
+        speedup = cpu_total / gpu_total if gpu_total > 0 else 0.0
+        register_speedup = cpu_register_time / gpu_kernel if gpu_kernel > 0 else 0.0
         gpu_error = abs(gpu_estimate - unique_items) / unique_items * 100
         cpu_error = abs(cpu_estimate - unique_items) / unique_items * 100
 
-        print("GPU Results:")
-        print(f"  Time: {gpu_time:.3f} seconds")
-        print(f"  Estimate: {gpu_estimate:,.0f}")
-        print(f"  Error: {gpu_error:.2f}%")
-        print(f"  Throughput: {total_items / gpu_time / 1e6:.2f} M items/sec")
+        print(f"GPU Results (median of {repeats} runs):")
+        print(f"  Host -> device:     {gpu_h2d:.4f}s")
+        print(f"  Kernel (hash+fold): {gpu_kernel:.5f}s")
+        print(f"  Device -> host:     {gpu_d2h:.5f}s")
+        print(f"  End-to-end:         {gpu_total:.4f}s")
+        print(f"  Estimate: {gpu_estimate:,.0f}  Error: {gpu_error:.2f}%")
 
         print("\nCPU Results:")
-        print(f"  Time: {cpu_time:.3f} seconds")
-        print(f"  Estimate: {cpu_estimate:,.0f}")
-        print(f"  Error: {cpu_error:.2f}%")
-        print(f"  Throughput: {total_items / cpu_time / 1e6:.2f} M items/sec")
+        print(f"  Hashing:            {hash_time:.3f}s")
+        print(f"  Register updates:   {cpu_register_time:.3f}s")
+        print(f"  Total:              {cpu_total:.3f}s")
+        print(f"  Estimate: {cpu_estimate:,.0f}  Error: {cpu_error:.2f}%")
 
-        print(f"\nSpeedup: {speedup:.2f}x")
+        print(f"\nSpeedup (end-to-end): {speedup:.1f}x")
+        print(f"Speedup (register update vs kernel): {register_speedup:.1f}x")
 
         results.append(
             {
                 "batch_size": batch_size,
-                "gpu_time": gpu_time,
-                "cpu_time": cpu_time,
+                "hash_time": hash_time,
+                "gpu_h2d": gpu_h2d,
+                "gpu_kernel": gpu_kernel,
+                "gpu_d2h": gpu_d2h,
+                "gpu_time": gpu_total,
+                "cpu_time": cpu_total,
                 "speedup": speedup,
+                "register_speedup": register_speedup,
                 "gpu_estimate": gpu_estimate,
                 "cpu_estimate": cpu_estimate,
                 "gpu_error": gpu_error,

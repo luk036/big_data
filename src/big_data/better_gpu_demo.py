@@ -3,33 +3,19 @@ import math
 import numpy as np
 from numba import cuda, uint64
 
-
-# A more robust 64-bit hash (MurmurHash3-style mixer)
-@cuda.jit(device=True)
-def murmur_mixer(key):
-    key ^= key >> 33
-    key *= uint64(0xFF51AFD7ED558CCD)
-    key ^= key >> 33
-    key *= uint64(0xC4CEB9FE1A85EC53)
-    key ^= key >> 33
-    return key
+from big_data.hll_hash import fmix64_device
 
 
 @cuda.jit
 def tuned_hll_kernel(data, registers, b):
     pos = cuda.grid(1)
     if pos < data.size:
-        # 1. Robust Hashing
-        x = murmur_mixer(uint64(data[pos]))
+        x = fmix64_device(uint64(data[pos]))
 
-        # 2. Bucket Index
         m_bits = uint64(b)
         idx = x >> (uint64(64) - m_bits)
 
-        # 3. Leading Zeros on the remaining 64-b bits
-        (x << m_bits) | (uint64(1) << (m_bits - uint64(1)))  # Ensure non-zero
-
-        # Count leading zeros using a fast bit-counting approach
+        # Count leading zeros on the remaining 64-b bits
         count = uint64(1)
         # Check bits from left to right
         temp_w = x << m_bits

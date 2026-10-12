@@ -1,9 +1,10 @@
-import hashlib
 import math
 import random
 from typing import Any
 
 import matplotlib.pyplot as plt
+
+from big_data.hll_hash import hash_bytes
 
 
 class HyperLogLog:
@@ -37,21 +38,8 @@ class HyperLogLog:
             self.alpha = 0.7213 / (1 + 1.079 / self.m)
 
     def _hash(self, value: Any) -> int:
-        """
-        Hash the input value to a 64-bit integer.
-
-        Args:
-            value: Any hashable value.
-
-        Returns:
-            A 64-bit integer hash.
-        """
-        # Convert to string and hash using SHA256
-        value_str = str(value).encode("utf-8")
-        hash_bytes = hashlib.sha256(value_str).digest()
-
-        # Take first 8 bytes (64 bits)
-        return int.from_bytes(hash_bytes[:8], byteorder="big")
+        """Hash the input value to a 64-bit integer."""
+        return hash_bytes(str(value).encode("utf-8"))
 
     def _count_leading_zeros(self, x: int, bits: int = 64) -> int:
         """
