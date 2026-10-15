@@ -11,8 +11,8 @@ Each experiment lives in its own module and can be executed directly, e.g.::
 
     python -m big_data.switching_analysis_demo
 
-The individual demo modules intentionally keep their own standalone
-implementations so that each file reads as a self-contained experiment.
+Shared algorithms live under :mod:`big_data.sketches`; the demo modules build
+self-contained experiments on top of them and stay runnable on their own.
 """
 
 from importlib.metadata import PackageNotFoundError, version

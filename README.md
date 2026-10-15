@@ -27,7 +27,8 @@ the `*_gpu_demo` and `mandelbrot` modules).
 | `big_data.memory_accuracy_tradeoff_demo` | Memory usage vs. accuracy trade-off of Count-Min Sketch |
 | `big_data.pattern_dependent_analyzer_demo` | Pattern-dependent and multi-corner switching analysis |
 | `big_data.temporal_switching_analyzer_demo` | Temporal switching activity and current-envelope estimation |
-| `big_data.switching_analysis_demo` | End-to-end switching power analysis (runs all demos) |
+| `big_data.switching_power_analysis_demo` | Switching power analysis with Count-Min Sketch |
+| `big_data.switching_analysis_demo` | Orchestrator: runs every switching-analysis demo above |
 | `big_data.hyper_loglog_demo` | HyperLogLog cardinality estimation |
 | `big_data.hyper_loglog_eda_demo` | HyperLogLog applications in EDA workflows |
 | `big_data.hyper_loglog_gpu_demo` | GPU-accelerated HyperLogLog (Numba CUDA) |
