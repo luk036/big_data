@@ -1,4 +1,3 @@
-import random
 from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -136,7 +135,7 @@ class PatternDependentAnalyzer:
 
         # Normalize
         if len(sample_nodes) > 0:
-            correlation_matrix = correlation_matrix / len(sample_nodes)  # type: ignore[assignment]
+            correlation_matrix = correlation_matrix / len(sample_nodes)
 
         return correlation_matrix
 
