@@ -115,3 +115,18 @@ def test_estimate_with_error_reports_additive_bound():
     estimate, bound = cms.estimate_with_error(7)
     assert estimate == cms.query(7)
     assert bound == pytest.approx(np.e * cms.total / 100)
+
+
+def test_from_error_sizes_sketch_for_guarantee():
+    cms = CountMinSketch.from_error(epsilon=0.001, delta=0.01)
+    assert cms.width == 2719
+    assert cms.depth == 5
+
+
+def test_from_error_rejects_bad_parameters():
+    with pytest.raises(ValueError):
+        CountMinSketch.from_error(epsilon=0.0)
+    with pytest.raises(ValueError):
+        CountMinSketch.from_error(delta=1.0)
+    with pytest.raises(ValueError):
+        CountMinSketch.from_error(delta=0.0)

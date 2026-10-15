@@ -61,6 +61,21 @@ class CountMinSketch:
             (rng.randint(1, 2**31), rng.randint(1, 2**31)) for _ in range(depth)
         ]
 
+    @classmethod
+    def from_error(
+        cls, epsilon: float = 0.001, delta: float = 0.01, mode: str = "min"
+    ) -> "CountMinSketch":
+        """Size a sketch for relative error ``epsilon`` with probability ``1 - delta``."""
+        if epsilon <= 0:
+            raise ValueError("epsilon must be positive")
+        if not 0 < delta < 1:
+            raise ValueError("delta must be in (0, 1)")
+        return cls(
+            width=math.ceil(math.e / epsilon),
+            depth=math.ceil(math.log(1 / delta)),
+            mode=mode,
+        )
+
     def _hash(self, key: int, row: int) -> int:
         """Hash function for a given key and row"""
         a, b = self.hash_params[row]
