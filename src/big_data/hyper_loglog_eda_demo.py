@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from big_data.hll_hash import hash_value
+from big_data.sketches.hyperloglog import HyperLogLogBase
 
 
 @dataclass
@@ -22,16 +23,10 @@ class EDACircuitConfig:
     grid_size: int = 1000
 
 
-class EDAHyperLogLog:
+class EDAHyperLogLog(HyperLogLogBase):
     """
     HyperLogLog specialized for EDA applications.
     """
-
-    def __init__(self, p: int = 14):
-        self.p = p
-        self.m = 1 << p
-        self.registers = np.zeros(self.m, dtype=np.int32)
-        self.alpha = 0.7213 / (1 + 1.079 / self.m)
 
     def _hash_eda_element(
         self, element_type: str, element_id: Any, properties: Optional[Dict] = None
@@ -46,33 +41,11 @@ class EDAHyperLogLog:
         self, element_type: str, element_id: Any, properties: Optional[Dict] = None
     ):
         """Add an EDA element to the sketch."""
-        h = self._hash_eda_element(element_type, element_id, properties)
-
-        # Standard HLL update
-        reg_idx = (h >> (64 - self.p)) & ((1 << self.p) - 1)
-        remaining = h & ((1 << (64 - self.p)) - 1)
-
-        if remaining == 0:
-            leading_zeros = (64 - self.p) + 1
-        else:
-            leading_zeros = (64 - self.p) - remaining.bit_length() + 1
-
-        if leading_zeros > self.registers[reg_idx]:
-            self.registers[reg_idx] = leading_zeros
+        self._update(self._hash_eda_element(element_type, element_id, properties))
 
     def _estimate_cardinality(self) -> float:
         """Estimate the number of distinct elements seen (harmonic mean + corrections)."""
-        z = np.sum(2.0**-self.registers)
-        estimate = self.alpha * self.m * self.m / z
-
-        if estimate <= 2.5 * self.m:
-            v = int(np.count_nonzero(self.registers == 0))
-            if v > 0:
-                estimate = self.m * np.log(self.m / v)
-        elif estimate > (1.0 / 30.0) * (2**64):
-            estimate = -(2**64) * np.log(1.0 - estimate / (2**64))
-
-        return float(estimate)
+        return self.count()
 
 
 class EDAApplicationSuite:

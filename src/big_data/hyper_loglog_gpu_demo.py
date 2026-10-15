@@ -12,7 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numba import cuda
 
-from big_data.hll_hash import fmix64_device, hash_array_u64, hash_strings, hash_value
+from big_data.hll_hash import fmix64_device, hash_array_u64, hash_strings
+from big_data.sketches.hyperloglog import HyperLogLogBase, estimate
 
 
 @dataclass
@@ -90,16 +91,6 @@ class GPUHyperLogLog:
     def __init__(self, config: Optional[HLLConfig] = None):
         self.config = config or HLLConfig()
         self.m = 1 << self.config.p  # Number of registers: 2^p
-
-        # Bias correction constants
-        if self.m == 16:
-            self.alpha = 0.673
-        elif self.m == 32:
-            self.alpha = 0.697
-        elif self.m == 64:
-            self.alpha = 0.709
-        else:
-            self.alpha = 0.7213 / (1 + 1.079 / self.m)
 
         self._reset_registers()
 
@@ -191,26 +182,7 @@ class GPUHyperLogLog:
         Returns:
             Estimated cardinality.
         """
-        # Copy registers from GPU to CPU
-        registers_cpu = self.registers_gpu.copy_to_host()
-
-        # Calculate harmonic mean
-        z = np.sum(2.0**-registers_cpu)
-
-        # Raw estimate
-        E = self.alpha * (self.m**2) / z
-
-        # Apply small-range correction
-        if E <= (5 / 2) * self.m:
-            V = np.sum(registers_cpu == 0)
-            if V != 0:
-                E = self.m * np.log(self.m / V)
-
-        # Apply large-range correction (for 64-bit hashes)
-        elif E > (1 / 30) * (2**64):
-            E = -(2**64) * np.log(1 - E / (2**64))
-
-        return float(E)
+        return estimate(self.registers_gpu.copy_to_host(), self.config.p)
 
     def merge(self, other: "GPUHyperLogLog") -> None:
         """
@@ -250,66 +222,11 @@ class GPUHyperLogLog:
         return stats
 
 
-class CPUHyperLogLog:
+class CPUHyperLogLog(HyperLogLogBase):
     """Reference CPU implementation for comparison."""
 
     def __init__(self, p: int = 12):
-        self.p = p
-        self.m = 1 << p
-        self.registers = np.zeros(self.m, dtype=np.int32)
-
-        if self.m == 16:
-            self.alpha = 0.673
-        elif self.m == 32:
-            self.alpha = 0.697
-        elif self.m == 64:
-            self.alpha = 0.709
-        else:
-            self.alpha = 0.7213 / (1 + 1.079 / self.m)
-
-    def _update(self, h: int) -> None:
-        reg_idx = (h >> (64 - self.p)) & ((1 << self.p) - 1)
-        remaining_bits = 64 - self.p
-        remaining = h & ((1 << remaining_bits) - 1)
-
-        if remaining == 0:
-            leading_zeros = remaining_bits + 1
-        else:
-            count = 0
-            mask = 1 << (remaining_bits - 1)
-            while mask > 0 and (remaining & mask) == 0:
-                count += 1
-                mask >>= 1
-            leading_zeros = count + 1
-
-        if leading_zeros > self.registers[reg_idx]:
-            self.registers[reg_idx] = leading_zeros
-
-    def add(self, item: Any) -> None:
-        """Add a single item."""
-        self._update(hash_value(item))
-
-    def add_hashes(self, hashes: np.ndarray) -> None:
-        """Add pre-computed 64-bit hashes (skips hashing)."""
-        for value in hashes:
-            self._update(int(value))
-
-    def add_batch(self, data: List[Any]) -> None:
-        """Add a batch of items."""
-        for item in data:
-            self.add(item)
-
-    def count(self) -> float:
-        """Estimate cardinality."""
-        z = np.sum(2.0**-self.registers)
-        E = self.alpha * (self.m**2) / z
-
-        if E <= (5 / 2) * self.m:
-            V = np.sum(self.registers == 0)
-            if V != 0:
-                E = self.m * np.log(self.m / V)
-
-        return float(E)
+        super().__init__(p)
 
 
 def _median(values: List[float]) -> float:
