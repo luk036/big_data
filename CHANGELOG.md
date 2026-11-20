@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-20
+
+### Features
+- **`CountMinSketch.from_error`**: Added a factory that sizes width and depth from the standard `(epsilon, delta)` guarantee, and promoted `CountMinSketch` to the package root. (#f89e6e7, #b0255cb)
+- **Bias-reduced CMS estimators**: Added `query_mean_min()`, conservative-update mode, `estimate_with_error()`/`additive_error_bound()`, merge/reset support, and total stream-weight tracking. (#b0255cb)
+
+### Bug Fixes
+- **HyperLogLog hashing and rank**: Unified every HyperLogLog on one 64-bit MurmurHash3/FNV family and fixed the rank to `leading zeros + 1`; the old formula only looked correct at small cardinalities because the linear-counting correction masked it. (#34b7002)
+- **GPU HyperLogLog correctness**: Zero-initialise the register buffer (dirty pooled memory corrupted estimates), remove no-op expressions, and vectorise batch string hashing. (#34b7002)
+
+### Performance
+- **Shared HyperLogLog core**: `HyperLogLog`, `EDAHyperLogLog`, `CPUHyperLogLog` and `GPUHyperLogLog` now delegate to one estimator core, with a fused hash-and-fold device kernel and split H2D/kernel/D2H benchmark reporting. (#32c66de, #3d172ff, #34b7002)
+
+### Testing & Code Quality
+- **Switching-analyzer characterization tests**: Pinned activity/power, temporal, pattern and corner behaviour and the single-source layout. (#2f1cb16)
+- **Switching-analysis orchestrator**: Replaced the ~1600-line duplicated demo monolith with a thin runner plus a dedicated `SwitchingPowerAnalyzer` module, and dropped dead imports and stale `type: ignore`s. (#4d324a1, #26b54e2)
+
+### Documentation
+- **bigdata4eda paper and deck**: Added the IEEEtran paper on Count-Min Sketch / HyperLogLog for EDA analytics and its Beamer deck. (#f386d12)
+
 ## [0.2.1] - 2026-10-09
 
 ### Fixed
